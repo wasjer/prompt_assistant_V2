@@ -1,4 +1,4 @@
-# AI Prompt 管理助手 (v1.0)
+# AI Prompt 管理助手 (v2.0)
 
 在各大 AI 对话页面（ChatGPT、通义千问、豆包、Gemini、DeepSeek 等）自动捕获用户输入的 Prompt，并存入本地 Node.js + SQLite 数据库，通过 Web 面板进行查看、筛选与导出。
 
