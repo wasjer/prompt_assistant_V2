@@ -1,0 +1,8 @@
+# 忽略 Node.js 依赖
+node_modules/
+
+# 忽略本地数据库和数据文件
+api/data/
+
+# 忽略可能的环境变量文件
+.env

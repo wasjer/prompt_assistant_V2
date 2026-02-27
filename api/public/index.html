@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prompt 管理控制台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .prompt-preview { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+  <div class="max-w-6xl mx-auto px-4 py-6">
+    <h1 class="text-2xl font-semibold text-slate-800 mb-6">Prompt 管理控制台</h1>
+
+    <!-- 顶部操作区 -->
+    <section class="bg-white rounded-lg shadow-sm border border-slate-200 p-4 mb-6">
+      <div class="flex flex-wrap items-end gap-3">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1">平台</label>
+          <select id="platform" class="border border-slate-300 rounded px-3 py-2 text-sm min-w-[140px] bg-white">
+            <option value="">全部</option>
+            <option value="chatgpt">ChatGPT</option>
+            <option value="qwen">Qwen</option>
+            <option value="doubao">Doubao</option>
+            <option value="gemini">Gemini</option>
+            <option value="deepseek">DeepSeek</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1">关键词</label>
+          <input type="text" id="keyword" placeholder="搜索 Prompt 内容" class="border border-slate-300 rounded px-3 py-2 text-sm w-52" />
+        </div>
+        <button id="btnSearch" class="px-4 py-2 bg-slate-700 text-white rounded text-sm font-medium hover:bg-slate-800">搜索</button>
+        <button id="btnExport" class="px-4 py-2 bg-emerald-600 text-white rounded text-sm font-medium hover:bg-emerald-700">导出 CSV</button>
+      </div>
+    </section>
+
+    <!-- 数据展示区 -->
+    <section class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+      <div id="message" class="px-4 py-2 text-sm text-amber-700 bg-amber-50 hidden"></div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left">
+          <thead class="bg-slate-100 border-b border-slate-200">
+            <tr>
+              <th class="px-4 py-3 text-sm font-medium text-slate-700 w-44">捕获时间</th>
+              <th class="px-4 py-3 text-sm font-medium text-slate-700 w-28">平台</th>
+              <th class="px-4 py-3 text-sm font-medium text-slate-700">Prompt 内容预览</th>
+              <th class="px-4 py-3 text-sm font-medium text-slate-700 w-24">操作</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div id="empty" class="px-4 py-8 text-center text-slate-500 text-sm hidden">暂无数据</div>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      const API_BASE = '/api/prompts';
+      let currentData = [];
+
+      const platformEl = document.getElementById('platform');
+      const keywordEl = document.getElementById('keyword');
+      const btnSearch = document.getElementById('btnSearch');
+      const btnExport = document.getElementById('btnExport');
+      const tbody = document.getElementById('tbody');
+      const emptyEl = document.getElementById('empty');
+      const messageEl = document.getElementById('message');
+
+      function showMessage(text, isError) {
+        messageEl.textContent = text;
+        messageEl.className = 'px-4 py-2 text-sm ' + (isError ? 'text-red-700 bg-red-50' : 'text-amber-700 bg-amber-50') + (text ? '' : ' hidden');
+      }
+
+      function formatTime(ts) {
+        if (ts == null) return '—';
+        const d = new Date(ts);
+        return isNaN(d.getTime()) ? '—' : d.toLocaleString('zh-CN');
+      }
+
+      function platformFromUrl(url) {
+        if (!url) return '—';
+        var u = (url || '').toLowerCase();
+        if (u.indexOf('chatgpt') >= 0 || u.indexOf('openai') >= 0) return 'ChatGPT';
+        if (u.indexOf('qwen') >= 0) return 'Qwen';
+        if (u.indexOf('doubao') >= 0) return 'Doubao';
+        if (u.indexOf('gemini') >= 0 || u.indexOf('google') >= 0) return 'Gemini';
+        if (u.indexOf('deepseek') >= 0) return 'DeepSeek';
+        try {
+          return new URL(url).hostname.replace(/^www\./, '') || '—';
+        } catch (_) {
+          return '—';
+        }
+      }
+
+      function escapeHtml(s) {
+        var div = document.createElement('div');
+        div.textContent = s == null ? '' : s;
+        return div.innerHTML;
+      }
+      function escapeAttr(s) {
+        return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+
+      function buildQuery() {
+        var q = [];
+        if (platformEl.value) q.push('platform=' + encodeURIComponent(platformEl.value));
+        if (keywordEl.value.trim()) q.push('keyword=' + encodeURIComponent(keywordEl.value.trim()));
+        return q.length ? '?' + q.join('&') : '';
+      }
+
+      function renderRows(data) {
+        currentData = data || [];
+        tbody.innerHTML = '';
+        emptyEl.classList.add('hidden');
+        if (!currentData.length) {
+          emptyEl.classList.remove('hidden');
+          return;
+        }
+        currentData.forEach(function (row) {
+          var tr = document.createElement('tr');
+          tr.className = 'border-b border-slate-100 hover:bg-slate-50';
+          var preview = (row.prompt || '').slice(0, 80);
+          if (row.prompt && row.prompt.length > 80) preview += '…';
+          tr.innerHTML =
+            '<td class="px-4 py-3 text-slate-600 text-sm">' + escapeHtml(formatTime(row.ts)) + '</td>' +
+            '<td class="px-4 py-3 text-slate-700 text-sm">' + escapeHtml(platformFromUrl(row.url)) + '</td>' +
+            '<td class="px-4 py-3 prompt-preview text-slate-800" title="' + escapeAttr((row.prompt || '').slice(0, 300)) + '">' + escapeHtml(preview) + '</td>' +
+            '<td class="px-4 py-3"><button type="button" class="delete-btn text-red-600 hover:underline text-sm" data-id="' + escapeAttr(row.id) + '">删除</button></td>';
+          tbody.appendChild(tr);
+        });
+        tbody.querySelectorAll('.delete-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () { doDelete(this.getAttribute('data-id')); });
+        });
+      }
+
+      function fetchPrompts() {
+        showMessage('加载中…');
+        fetch(API_BASE + buildQuery())
+          .then(function (r) { return r.json(); })
+          .then(function (json) {
+            showMessage('');
+            if (json.success) {
+              renderRows(json.data);
+            } else {
+              showMessage(json.error || '请求失败', true);
+              renderRows([]);
+            }
+          })
+          .catch(function (err) {
+            showMessage('请求失败: ' + (err.message || '网络错误'), true);
+            renderRows([]);
+          });
+      }
+
+      function doDelete(id) {
+        if (!id) return;
+        if (!confirm('确定删除这条记录？')) return;
+        fetch(API_BASE + '/' + encodeURIComponent(id), { method: 'DELETE' })
+          .then(function (r) { return r.json(); })
+          .then(function (json) {
+            if (json.success) {
+              currentData = currentData.filter(function (row) { return row.id !== id; });
+              renderRows(currentData);
+            } else {
+              showMessage(json.error || '删除失败', true);
+            }
+          })
+          .catch(function (err) {
+            showMessage('删除失败: ' + (err.message || '网络错误'), true);
+          });
+      }
+
+      function exportCsv() {
+        if (!currentData.length) {
+          showMessage('当前没有可导出的数据', true);
+          return;
+        }
+        var headers = ['捕获时间', '平台', 'model', 'prompt'];
+        function csvCell(s) {
+          var str = String(s);
+          return str.indexOf(',') >= 0 || str.indexOf('"') >= 0 || str.indexOf('\n') >= 0 || str.indexOf('\t') >= 0 ? '"' + str.replace(/"/g, '""') + '"' : str;
+        }
+        var rows = currentData.map(function (row) {
+          var time = formatTime(row.ts);
+          var platform = platformFromUrl(row.url);
+          var prompt = (row.prompt || '').replace(/"/g, '""');
+          return [time, platform, row.model || '', prompt];
+        });
+        var csvContent = [headers.join(','), rows.map(function (arr) { return arr.map(csvCell).join(','); }).join('\n')].join('\n');
+        var blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'prompts_' + new Date().toISOString().slice(0, 10) + '.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showMessage('已导出 ' + currentData.length + ' 条记录');
+        setTimeout(function () { showMessage(''); }, 2000);
+      }
+
+      btnSearch.addEventListener('click', fetchPrompts);
+      btnExport.addEventListener('click', exportCsv);
+      keywordEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') fetchPrompts(); });
+
+      fetchPrompts();
+    })();
+  </script>
+</body>
+</html>
