@@ -1,6 +1,6 @@
 {
   "name": "prompt-assistant-api",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "后端 API 服务器，用于接收和存储 AI Prompt 数据",
   "main": "src/server.js",
   "scripts": {
